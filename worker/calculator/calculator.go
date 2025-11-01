@@ -7,10 +7,6 @@ import (
 	"net"
 	"net/rpc"
 	"time"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"strconv"
 
 	"ds-integral.com/master/shared"
 )
@@ -22,7 +18,6 @@ type Calculator struct {
 
 	job    *currentJob
 	ticker *time.Ticker
-	stopCh chan struct{}
 }
 
 type currentJob struct {
@@ -31,7 +26,6 @@ type currentJob struct {
 	upperBound float64
 	numPoints  uint64
 	function   string
-	result     big.Float
 	completed  bool
 	precision  uint
 }
@@ -44,6 +38,69 @@ func NewCalculator(masterIP net.IP, port int) Calculator {
 		},
 		ticker: time.NewTicker(time.Second * 5),
 	}
+}
+
+func (c *Calculator) createClient() {
+	var err error
+	c.client, err = rpc.Dial("tcp", c.masterAddr.String())
+	if err != nil {
+		log.Fatalf("unable to create rpc client: %s", err)
+	}
+	log.Printf("RPC client created")
+}
+
+func (c *Calculator) connect() error {
+	args := &shared.ConnectArgs{WorkerIP: c.masterAddr.IP.String()}
+	var reply shared.ConnectReply
+	err := c.client.Call("CalcRPC.Connect", args, &reply)
+	if err != nil {
+		return err
+	}
+
+	c.workerName = reply.WorkerName
+	log.Printf("Connected to master as %s", c.workerName)
+	return nil
+}
+
+func (c *Calculator) ping() {
+	go func() {
+		for {
+			<-c.ticker.C
+			args := &shared.PingArgs{WorkerName: c.workerName}
+			var reply shared.PingResponse
+			err := c.client.Call("CalcRPC.Ping", args, &reply)
+			if err != nil {
+				log.Printf("unable to ping master: %s", err)
+			}
+		}
+	}()
+}
+
+func (c *Calculator) askJob() bool {
+	args := &shared.AskArgs{WorkerName: c.workerName}
+	var reply shared.AskReply
+	err := c.client.Call("CalcRPC.Ask", args, &reply)
+	if err != nil {
+		log.Fatalf("unable to call CalcRPC.Ask: %s", err)
+		return false
+	}
+
+	if reply.NumPoints == 0 {
+		return false
+	}
+
+	c.job = &currentJob{
+		id:         reply.JobID,
+		lowerBound: reply.LowerBound,
+		upperBound: reply.UpperBound,
+		numPoints:  reply.NumPoints,
+		function:   reply.Function,
+		completed:  false,
+	}
+
+	log.Printf("Received job %d: [%f, %f] with %d points for function %s",
+		c.job.id, c.job.lowerBound, c.job.upperBound, c.job.numPoints, c.job.function)
+	return true
 }
 
 func (c *Calculator) Run() {
@@ -60,21 +117,15 @@ func (c *Calculator) Run() {
 	// ask jobs
 	for {
 		if c.askJob() {
-			// Si numPoints es 0, significa que no hay más trabajo
-			if c.job.numPoints == 0 {
-				log.Printf("No more jobs available. Waiting...")
-				time.Sleep(time.Second * 10)
-				continue
-			}
-			
 			if result := c.calculate(); result != nil {
 				c.send(result)
 			}
+		} else {
+			log.Printf("No work assigned. Waiting...")
+			time.Sleep(time.Second * 5)
 		}
 	}
 }
-
-// Métodos connect, ping, askJob similares a los del sistema de PI
 
 func (c *Calculator) calculate() []byte {
 	start := time.Now()
@@ -83,7 +134,7 @@ func (c *Calculator) calculate() []byte {
 	precision := uint(math.Log2(float64(c.job.numPoints))+1000*3.32) * 3
 	c.job.precision = precision
 
-	// Crear un nuevo número para guardar el resultado con alta precisión
+	// Crear un nuevo número para guardar el resultado
 	result := new(big.Float).SetPrec(precision * 2).SetFloat64(0)
 
 	// Calcular el ancho de cada subintervalo
@@ -107,7 +158,7 @@ func (c *Calculator) calculate() []byte {
 	// Multiplicar por deltaX para obtener el resultado final
 	result.Mul(sum, big.NewFloat(deltaX))
 
-	elapsed := time.Now().Sub(start)
+	elapsed := time.Since(start)
 	log.Printf("Job calculated in %s. Result (rounded) %s", elapsed, result.String())
 
 	buffer, err := result.GobEncode()
@@ -119,13 +170,11 @@ func (c *Calculator) calculate() []byte {
 	return buffer
 }
 
-// evaluateFunction evalúa la función en un punto dado
+// Evalúa la función en un punto dado
 func evaluateFunction(x float64, functionStr string) float64 {
-	// Implementar un evaluador de expresiones simple
-	// Para un sistema real, se podría usar una biblioteca más robusta
-	// Este es un ejemplo básico que soporta x^n, sin(x), cos(x), etc.
-	
-	// Por simplicidad, aquí solo implementamos x^2 como ejemplo
+	// Evaluador de expresiones simple
+	// Ejemplo básico que soporta x^n, sin(x), cos(x), etc.
+
 	switch functionStr {
 	case "x^2":
 		return x * x
@@ -136,16 +185,14 @@ func evaluateFunction(x float64, functionStr string) float64 {
 	case "exp(x)":
 		return math.Exp(x)
 	default:
-		// Intentar parsear expresiones simples como "x^n"
+		// Parsear expresiones simples como "x^n"
 		return parseAndEvaluate(functionStr, x)
 	}
 }
 
-// parseAndEvaluate intenta parsear y evaluar expresiones matemáticas simples
-func parseAndEvaluate(expr string, x float64) float64 {
-	// Implementación básica para expresiones simples
-	// En un sistema real, se usaría un parser más completo
-	return x * x // Valor por defecto
+// Parsea y evalua expresiones matemáticas simples
+func parseAndEvaluate(_ string, x float64) float64 {
+	return x * x
 }
 
 func (c *Calculator) send(buffer []byte) bool {
