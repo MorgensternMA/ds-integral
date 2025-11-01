@@ -20,6 +20,7 @@ type WorkerJob struct {
 	LowerBound float64
 	UpperBound float64
 	NumPoints  uint64
+	Function   string
 }
 
 // CalcRPC handles RPC calls for the integral calculator
@@ -57,7 +58,7 @@ func (c *CalcRPC) Ask(args *AskArgs, reply *AskReply) error {
 	reply.LowerBound = job.LowerBound
 	reply.UpperBound = job.UpperBound
 	reply.NumPoints = job.NumPoints
-	reply.Function = c.calc.GetCurrentFunction()
+	reply.Function = job.Function
 
 	return nil
 }

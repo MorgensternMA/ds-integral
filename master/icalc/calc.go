@@ -71,7 +71,7 @@ type mergeRequest struct {
 }
 
 func NewCalc() *Calc {
-	return &Calc{
+	c := &Calc{
 		jobMutex:        sync.Mutex{},
 		saveMutex:       sync.Mutex{},
 		sumMutex:        sync.Mutex{},
@@ -87,6 +87,11 @@ func NewCalc() *Calc {
 		CurrentInterval: config.IntervalSize,
 		JobDelay:        0,
 	}
+
+	// Start the background goroutine to process results
+	go c.processResultsBuffer()
+
+	return c
 }
 
 func (c *Calc) GetJob(workerName string) shared.WorkerJob {
@@ -133,6 +138,7 @@ func (c *Calc) GetJob(workerName string) shared.WorkerJob {
 			LowerBound: job.LowerBound,
 			UpperBound: job.UpperBound,
 			NumPoints:  job.NumPoints,
+			Function:   workerRange.Function,
 		}
 	}
 
@@ -148,6 +154,59 @@ func (c *Calc) CompleteJob(jobId uint64, result []byte, precision uint) {
 		result:    result,
 		precision: precision,
 	})
+}
+
+// processResultsBuffer continuously processes completed jobs from the buffer
+func (c *Calc) processResultsBuffer() {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.bufferMutex.Lock()
+		if len(c.JobsBuffer) == 0 {
+			c.bufferMutex.Unlock()
+			continue
+		}
+
+		// Copy buffer and clear it
+		buffer := make([]mergeRequest, len(c.JobsBuffer))
+		copy(buffer, c.JobsBuffer)
+		c.JobsBuffer = []mergeRequest{}
+		c.bufferMutex.Unlock()
+
+		// Process each result
+		for _, req := range buffer {
+			c.mergeResult(req.jobId, req.result, req.precision)
+		}
+	}
+}
+
+// mergeResult adds a job result to the final accumulated result
+func (c *Calc) mergeResult(jobId uint64, result []byte, precision uint) {
+	// Decode the result
+	partialResult := new(big.Float).SetPrec(precision)
+	err := partialResult.GobDecode(result)
+	if err != nil {
+		log.Printf("Error decoding result for job %d: %v", jobId, err)
+		return
+	}
+
+	// Add to accumulated result
+	c.sumMutex.Lock()
+	c.Result.Add(c.Result, partialResult)
+	c.sumMutex.Unlock()
+
+	// Mark job as completed
+	c.jobMutex.Lock()
+	if job, exists := c.Jobs[jobId]; exists {
+		now := time.Now()
+		job.Completed = true
+		job.ReturnedAt = &now
+		job.Result = result
+		c.Jobs[jobId] = job
+		log.Printf("Job %d completed and merged. Partial result: %s", jobId, partialResult.Text('f', 10))
+	}
+	c.jobMutex.Unlock()
 }
 
 func (c *Calc) GenerateWorkerName() string {
