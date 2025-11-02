@@ -107,9 +107,11 @@ func (s *Server) Start(port string) error {
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/result", s.handleResult)
 	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/", s.handleWeb)
 
 	log.Printf("API Server listening on %s", port)
 	log.Println("Available endpoints:")
+	log.Println("  GET  /             		   - Render a dashboard)")
 	log.Println("  POST /integrals             - Start integral (with auto_divide=true to auto-assign)")
 	log.Println("  POST /ranges/assign         - Assign range to single worker")
 	log.Println("  POST /ranges/assign-multi   - Assign multiple ranges at once")
@@ -330,6 +332,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
+}
+
+// GET / - Web dashboard
+func (s *Server) handleWeb(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "api/index.html")
 }
 
 // POST /ranges/assign - Assign a specific range to a worker

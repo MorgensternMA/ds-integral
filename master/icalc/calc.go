@@ -221,10 +221,23 @@ func (c *Calc) GenerateWorkerName() string {
 func (c *Calc) AddWorker(name, ip string) {
 	c.workerMutex.Lock()
 	defer c.workerMutex.Unlock()
-	c.Workers[name] = Worker{
-		Name:     name,
-		IP:       ip,
-		LastPing: time.Now(),
+
+	exists := false
+	for i, worker := range c.Workers {
+		if worker.IP == ip {
+			worker.LastPing = time.Now()
+			c.Workers[i] = worker
+			exists = true
+			break
+		}
+	}
+
+	if !exists {
+		c.Workers[name] = Worker{
+			Name:     name,
+			IP:       ip,
+			LastPing: time.Now(),
+		}
 	}
 }
 
@@ -349,11 +362,11 @@ func (c *Calc) GetResult() *big.Float {
 
 // Stats holds statistics information
 type Stats struct {
-	TotalJobs      int
-	CompletedJobs  int
-	PendingJobs    int
-	TotalWorkers   int
-	WorkerJobCount map[string]int
+	TotalJobs      int            `json:"total_jobs"`
+	CompletedJobs  int            `json:"completed_jobs"`
+	PendingJobs    int            `json:"pending_jobs"`
+	TotalWorkers   int            `json:"total_workers"`
+	WorkerJobCount map[string]int `json:"worker_job_count"`
 }
 
 // GetStats returns calculation statistics
@@ -372,7 +385,14 @@ func (c *Calc) GetStats() Stats {
 	}
 
 	c.workerMutex.RLock()
-	totalWorkers := len(c.Workers)
+	totalWorkers := 0
+	for _, worker := range c.Workers {
+		// skip if offline
+		if time.Now().Sub(worker.LastPing).Abs().Seconds() > 6 {
+			continue
+		}
+		totalWorkers++
+	}
 	c.workerMutex.RUnlock()
 
 	return Stats{
