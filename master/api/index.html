@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sistema de Distribución - Integrales</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 40px;
+        font-size: 2rem;
+      }
+
+      .sections {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        margin-bottom: 30px;
+      }
+
+      @media (max-width: 768px) {
+        .sections {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .section {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      }
+
+      .section h2 {
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 1.5rem;
+        border-bottom: 2px solid #3b82f6;
+        padding-bottom: 10px;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        color: #555;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        font-size: 1rem;
+        transition: border-color 0.2s;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+
+      button {
+        width: 100%;
+        padding: 12px;
+        background: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      button:hover {
+        background: #2563eb;
+      }
+
+      button:disabled {
+        background: #cbd5e1;
+        cursor: not-allowed;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      .stat-card {
+        background: #f8fafc;
+        padding: 15px;
+        border-radius: 8px;
+        border-left: 4px solid #3b82f6;
+        margin-top: 5px;
+      }
+
+      .stat-label {
+        color: #666;
+        font-size: 0.875rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .stat-value {
+        color: #333;
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-top: 5px;
+      }
+
+      .update-time {
+        color: #999;
+        font-size: 0.875rem;
+        padding-top: 15px;
+        border-top: 1px solid #eee;
+      }
+
+      .message {
+        padding: 12px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        display: none;
+      }
+
+      .message.success {
+        background: #d1fae5;
+        color: #065f46;
+        border: 1px solid #6ee7b7;
+        display: block;
+      }
+
+      .message.error {
+        background: #fee2e2;
+        color: #7f1d1d;
+        border: 1px solid #fca5a5;
+        display: block;
+      }
+
+      .loading {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #3b82f6;
+        margin-left: 8px;
+        animation: pulse 1.5s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Sistema de Distribución - Integrales Definidas</h1>
+
+      <div class="sections">
+        <!-- INPUT SECTION -->
+        <div class="section">
+          <h2>Ingresar Ecuación</h2>
+          <div id="message" class="message"></div>
+
+          <div class="form-group">
+            <label for="function">Función</label>
+            <input
+              type="text"
+              id="function"
+              placeholder="Ej: x^2, sin(x), 1/x"
+              value="x^2"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="lowerBound">Límite Inferior</label>
+            <input
+              type="number"
+              id="lowerBound"
+              placeholder="0"
+              value="0"
+              step="0.01"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="upperBound">Límite Superior</label>
+            <input
+              type="number"
+              id="upperBound"
+              placeholder="4"
+              value="4"
+              step="0.01"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="intervalSize">Tamaño del Intervalo</label>
+            <input
+              type="number"
+              id="intervalSize"
+              placeholder="0.01"
+              value="0.01"
+              step="0.001"
+            />
+          </div>
+
+          <button id="submitBtn" onclick="submitIntegral()">
+            Enviar Integral
+          </button>
+        </div>
+
+        <!-- STATS SECTION -->
+        <div class="section">
+          <h2>Estadísticas</h2>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total Jobs</div>
+              <div class="stat-value" id="totalJobs">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Completados</div>
+              <div class="stat-value" id="completedJobs">0</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Workers Activos</div>
+              <div class="stat-value" id="activeWorkers">0</div>
+            </div>
+          </div>
+
+          <!-- <div class="stat-card" style="border-left-color: #10b981">
+            <div class="stat-label">Intervalos Totales</div>
+            <div class="stat-value" id="totalIntervals">0</div>
+          </div>
+
+          <div class="stat-card" style="border-left-color: #f59e0b">
+            <div class="stat-label">Intervalos Procesados</div>
+            <div class="stat-value" id="processedIntervals">0</div>
+          </div> -->
+
+          <div class="update-time">
+            Última actualización: <span id="lastUpdate">--:--:--</span>
+            <span id="loadingSpinner" class="loading"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:8080";
+
+      // Enviar integral
+      async function submitIntegral() {
+        const func = document.getElementById("function").value;
+        const lower = parseFloat(document.getElementById("lowerBound").value);
+        const upper = parseFloat(document.getElementById("upperBound").value);
+        const interval = parseFloat(
+          document.getElementById("intervalSize").value
+        );
+
+        if (!func || isNaN(lower) || isNaN(upper) || isNaN(interval)) {
+          showMessage(
+            "Por favor completa todos los campos correctamente",
+            "error"
+          );
+          return;
+        }
+
+        const btn = document.getElementById("submitBtn");
+        btn.disabled = true;
+
+        try {
+          const response = await fetch(`${API_URL}/integrals`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              function: func,
+              lower_bound: lower,
+              upper_bound: upper,
+              interval_size: interval,
+              auto_divide: true,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            showMessage(
+              `✓ Integral enviada. Workers asignados: ${data.workers_assigned}`,
+              "success"
+            );
+            document.getElementById("function").value = "";
+            document.getElementById("lowerBound").value = "0";
+            document.getElementById("upperBound").value = "4";
+            document.getElementById("intervalSize").value = "0.01";
+          } else {
+            showMessage("Error al enviar la integral", "error");
+          }
+        } catch (error) {
+          showMessage("Error de conexión: " + error.message, "error");
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      // Mostrar mensaje
+      function showMessage(text, type) {
+        const msg = document.getElementById("message");
+        msg.textContent = text;
+        msg.className = `message ${type}`;
+        setTimeout(() => {
+          msg.className = "message";
+        }, 5000);
+      }
+
+      // Obtener stats
+      async function fetchStats() {
+        try {
+          const response = await fetch(`${API_URL}/stats`);
+          if (response.ok) {
+            const stats = await response.json();
+            console.log("stats", stats);
+            updateStatsDisplay(stats);
+          }
+        } catch (error) {
+          console.error("Error fetching stats:", error);
+        }
+      }
+
+      // Actualizar display de stats
+      function updateStatsDisplay(stats) {
+        document.getElementById("totalJobs").textContent =
+          stats.total_jobs || "0";
+        document.getElementById("completedJobs").textContent = String(
+          (stats.completed_jobs ?? 0) + 1
+        );
+        document.getElementById("activeWorkers").textContent =
+          stats.total_workers || "0";
+
+        document.getElementById("totalIntervals").textContent =
+          stats.total_intervals || "0";
+        document.getElementById("processedIntervals").textContent =
+          stats.processed_intervals || "0";
+
+        const now = new Date();
+        document.getElementById("lastUpdate").textContent =
+          now.toLocaleTimeString();
+      }
+
+      // Polling cada 1 segundo
+      setInterval(fetchStats, 1000);
+
+      // Primer fetch al cargar
+      fetchStats();
+    </script>
+  </body>
+</html>
