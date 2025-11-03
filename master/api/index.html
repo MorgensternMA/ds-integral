@@ -183,6 +183,65 @@
           opacity: 0.5;
         }
       }
+
+      .function-badges {
+        margin-bottom: 15px;
+      }
+
+      .function-badges-label {
+        color: #666;
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 10px;
+      }
+
+      .badges-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 12px;
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-family: "Courier New", monospace;
+      }
+
+      .badge:hover {
+        background: #3b82f6;
+        color: white;
+        border-color: #3b82f6;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+      }
+
+      .badge.active {
+        background: #3b82f6;
+        color: white;
+        border-color: #3b82f6;
+      }
+
+      .category-title {
+        font-size: 0.75rem;
+        color: #94a3b8;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-top: 12px;
+        margin-bottom: 8px;
+      }
+
+      .category-title:first-child {
+        margin-top: 0;
+      }
     </style>
   </head>
   <body>
@@ -197,11 +256,107 @@
 
           <div class="form-group">
             <label for="function">Función</label>
+
+            <div class="function-badges">
+              <div class="function-badges-label">Funciones predefinidas:</div>
+
+              <div class="category-title">Polinomios</div>
+              <div class="badges-container">
+                <span class="badge" onclick="selectFunction('x^2', 0, 4, 0.01)"
+                  >x²</span
+                >
+                <span class="badge" onclick="selectFunction('x^3', -2, 2, 0.01)"
+                  >x³</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('2*x^3 - 5*x + 1', 0, 3, 0.01)"
+                  >2x³ - 5x + 1</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('x^4 - 4*x^2', -3, 3, 0.01)"
+                  >x⁴ - 4x²</span
+                >
+              </div>
+
+              <div class="category-title">Trigonométricas</div>
+              <div class="badges-container">
+                <span
+                  class="badge"
+                  onclick="selectFunction('sin(x)', 0, 3.14159, 0.01)"
+                  >sin(x)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('cos(x)', 0, 6.28318, 0.01)"
+                  >cos(x)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('sin(x) + cos(x)', 0, 6.28318, 0.01)"
+                  >sin(x) + cos(x)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('sin(x) * cos(x)', 0, 3.14159, 0.01)"
+                  >sin(x)·cos(x)</span
+                >
+              </div>
+
+              <div class="category-title">Exponenciales y Logaritmos</div>
+              <div class="badges-container">
+                <span
+                  class="badge"
+                  onclick="selectFunction('exp(x)', 0, 2, 0.01)"
+                  >eˣ</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('log(x)', 1, 10, 0.01)"
+                  >ln(x)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('exp(-x^2)', -3, 3, 0.01)"
+                  >e^(-x²)</span
+                >
+              </div>
+
+              <div class="category-title">Racionales y Complejas</div>
+              <div class="badges-container">
+                <span class="badge" onclick="selectFunction('1/x', 1, 10, 0.01)"
+                  >1/x</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('1/(1 + x^2)', -5, 5, 0.01)"
+                  >1/(1+x²)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('sqrt(x)', 0, 9, 0.01)"
+                  >√x</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('x * sin(x)', 0, 10, 0.01)"
+                  >x·sin(x)</span
+                >
+                <span
+                  class="badge"
+                  onclick="selectFunction('exp(x) / (1 + x^2)', 0, 5, 0.01)"
+                  >eˣ/(1+x²)</span
+                >
+              </div>
+            </div>
+
             <input
               type="text"
               id="function"
               placeholder="Ej: x^2, sin(x), 1/x"
               value="x^2"
+              readonly
             />
           </div>
 
@@ -247,6 +402,27 @@
         <div class="section">
           <h2>Estadísticas</h2>
 
+          <!-- RESULTADO -->
+          <div
+            class="stat-card"
+            style="border-left-color: #10b981; margin-bottom: 25px"
+          >
+            <div class="stat-label">Resultado de la Integral</div>
+            <div
+              class="stat-value"
+              id="resultValue"
+              style="font-size: 1.5rem; color: #059669; word-break: break-all"
+            >
+              Esperando cálculo...
+            </div>
+            <div
+              id="resultStatus"
+              style="font-size: 0.875rem; color: #6b7280; margin-top: 8px"
+            >
+              Envía una integral para comenzar
+            </div>
+          </div>
+
           <div class="stats-grid">
             <div class="stat-card">
               <div class="stat-label">Total Jobs</div>
@@ -262,16 +438,6 @@
             </div>
           </div>
 
-          <!-- <div class="stat-card" style="border-left-color: #10b981">
-            <div class="stat-label">Intervalos Totales</div>
-            <div class="stat-value" id="totalIntervals">0</div>
-          </div>
-
-          <div class="stat-card" style="border-left-color: #f59e0b">
-            <div class="stat-label">Intervalos Procesados</div>
-            <div class="stat-value" id="processedIntervals">0</div>
-          </div> -->
-
           <div class="update-time">
             Última actualización: <span id="lastUpdate">--:--:--</span>
             <span id="loadingSpinner" class="loading"></span>
@@ -282,6 +448,30 @@
 
     <script>
       const API_URL = "http://localhost:8080";
+
+      // Seleccionar función predefinida
+      function selectFunction(func, lower, upper, interval) {
+        document.getElementById("function").value = func;
+        document.getElementById("lowerBound").value = lower;
+        document.getElementById("upperBound").value = upper;
+        document.getElementById("intervalSize").value = interval;
+
+        // Remover clase active de todos los badges
+        document
+          .querySelectorAll(".badge")
+          .forEach((b) => b.classList.remove("active"));
+
+        // Agregar clase active al badge clickeado
+        event.target.classList.add("active");
+
+        // Animación visual
+        const input = document.getElementById("function");
+        input.focus();
+        input.style.background = "#f0f9ff";
+        setTimeout(() => {
+          input.style.background = "";
+        }, 500);
+      }
 
       // Enviar integral
       async function submitIntegral() {
@@ -322,10 +512,10 @@
               `✓ Integral enviada. Workers asignados: ${data.workers_assigned}`,
               "success"
             );
-            document.getElementById("function").value = "";
-            document.getElementById("lowerBound").value = "0";
-            document.getElementById("upperBound").value = "4";
-            document.getElementById("intervalSize").value = "0.01";
+            // Remover clase active de todos los badges
+            document
+              .querySelectorAll(".badge")
+              .forEach((b) => b.classList.remove("active"));
           } else {
             showMessage("Error al enviar la integral", "error");
           }
@@ -360,28 +550,49 @@
         }
       }
 
+      // Obtener resultado
+      async function fetchResult() {
+        try {
+          const response = await fetch(`${API_URL}/result`);
+          if (response.status !== 200) {
+            throw "noContent";
+          }
+
+          const result = await response.json();
+          console.log("result", result);
+          updateResult(result["result"], result["time_to_complete"]);
+        } catch (error) {
+          console.error("Error fetching result:", error);
+        }
+      }
+
       // Actualizar display de stats
       function updateStatsDisplay(stats) {
         document.getElementById("totalJobs").textContent =
           stats.total_jobs || "0";
         document.getElementById("completedJobs").textContent = String(
-          (stats.completed_jobs ?? 0) + 1
+          stats.completed_jobs || "0"
         );
         document.getElementById("activeWorkers").textContent =
           stats.total_workers || "0";
-
-        document.getElementById("totalIntervals").textContent =
-          stats.total_intervals || "0";
-        document.getElementById("processedIntervals").textContent =
-          stats.processed_intervals || "0";
 
         const now = new Date();
         document.getElementById("lastUpdate").textContent =
           now.toLocaleTimeString();
       }
 
+      function updateResult(result, timeToComplete) {
+        document.getElementById("resultValue").textContent = result;
+        document.getElementById(
+          "resultStatus"
+        ).textContent = `Resultado obtenido en ${timeToComplete}`;
+      }
+
       // Polling cada 1 segundo
-      setInterval(fetchStats, 1000);
+      setInterval(() => {
+        fetchStats();
+        fetchResult();
+      }, 1000);
 
       // Primer fetch al cargar
       fetchStats();

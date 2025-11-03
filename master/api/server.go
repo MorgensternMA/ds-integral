@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"ds-integral.com/master/icalc"
 )
@@ -86,7 +88,8 @@ type StatsResponse struct {
 }
 
 type ResultResponse struct {
-	Result string `json:"result"`
+	Result         string `json:"result"`
+	TimeToComplete string `json:"time_to_complete"`
 }
 
 type ErrorResponse struct {
@@ -309,6 +312,10 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := s.calc.GetResult()
+	if result == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 
 	// Get precision from query parameter
 	precision := 10
@@ -319,7 +326,8 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ResultResponse{
-		Result: result.Text('f', precision),
+		Result:         formatBigFloatWithCommas(result, precision),
+		TimeToComplete: s.calc.GetTimeToComplete(),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -451,4 +459,38 @@ func (s *Server) enableCORS(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func formatBigFloatWithCommas(result *big.Float, precision int) string {
+	s := result.Text('f', precision)
+
+	parts := strings.Split(s, ".")
+	integerPart := parts[0]
+	decimalPart := ""
+
+	if len(parts) > 1 {
+		decimalPart = parts[1]
+	}
+
+	n := len(integerPart)
+
+	remainder := n % 3
+	if remainder == 0 {
+		remainder = 3 // Si es divisible por 3, el primer grupo tiene 3 dígitos
+	}
+
+	var formatted strings.Builder
+	formatted.WriteString(integerPart[:remainder])
+
+	for i := remainder; i < n; i += 3 {
+		formatted.WriteString(",")
+		formatted.WriteString(integerPart[i : i+3])
+	}
+
+	if decimalPart != "" {
+		formatted.WriteString(".")
+		formatted.WriteString(decimalPart)
+	}
+
+	return formatted.String()
 }

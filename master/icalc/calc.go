@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +35,8 @@ type Calc struct {
 	LastPoint    float64                 // This contains the last point given by the master
 	LastJobID    uint64                  // keeps track of given job ids
 	Result       *big.Float              // The calculated integral result
+	StartedAt    *time.Time              // time when the last job started
+	FinishedAt   *time.Time              // time when the last job finished
 
 	// Dynamic configuration
 	CurrentFunction string
@@ -117,21 +120,29 @@ func (c *Calc) GetJob(workerName string) shared.WorkerJob {
 		}
 
 		jobId := c.LastJobID
+
+		// Calculate points ensuring a minimum of 1000 points even for small intervals
+		intervalSize := upperBound - lowerBound
+		numPoints := uint64(intervalSize / 0.001)
+		if numPoints < 1000 {
+			numPoints = 1000
+		}
+
 		job := WorkerJob{
 			ID:         jobId,
 			SendAt:     time.Now(),
 			WorkerName: workerName,
 			LowerBound: lowerBound,
 			UpperBound: upperBound,
-			NumPoints:  uint64((upperBound - lowerBound) / 0.001),
+			NumPoints:  numPoints,
 		}
 
 		c.Jobs[job.ID] = job
 		c.LastJobID++
 		workerRange.CurrentPoint = upperBound
 
-		log.Printf("Gave job [id=%d] to worker %s from assigned range [%f, %f] - progress: [%f/%f]",
-			job.ID, workerName, lowerBound, upperBound, workerRange.CurrentPoint, workerRange.UpperBound)
+		log.Printf("Gave job [id=%d] to worker %s from assigned range [%f, %f] with %d points",
+			job.ID, workerName, lowerBound, upperBound, numPoints)
 
 		return shared.WorkerJob{
 			ID:         job.ID,
@@ -178,6 +189,11 @@ func (c *Calc) processResultsBuffer() {
 		for _, req := range buffer {
 			c.mergeResult(req.jobId, req.result, req.precision)
 		}
+
+		if c.IsFinished() {
+			now := time.Now()
+			c.FinishedAt = &now
+		}
 	}
 }
 
@@ -223,14 +239,14 @@ func (c *Calc) AddWorker(name, ip string) {
 	defer c.workerMutex.Unlock()
 
 	exists := false
-	for i, worker := range c.Workers {
-		if worker.IP == ip {
-			worker.LastPing = time.Now()
-			c.Workers[i] = worker
-			exists = true
-			break
-		}
-	}
+	// for i, worker := range c.Workers {
+	// 	if worker.IP == ip {
+	// 		worker.LastPing = time.Now()
+	// 		c.Workers[i] = worker
+	// 		exists = true
+	// 		break
+	// 	}
+	// }
 
 	if !exists {
 		c.Workers[name] = Worker{
@@ -287,21 +303,28 @@ func (c *Calc) AssignSpecificInterval(workerName, function string, lower, upper 
 	jobId := c.LastJobID
 	c.LastJobID++
 
+	// Calcular número de puntos con un mínimo de 1000 puntos
+	intervalSize := upper - lower
+	numPoints := uint64(intervalSize / 0.001)
+	if numPoints < 1000 {
+		numPoints = 1000
+	}
+
 	job := WorkerJob{
 		ID:         jobId,
 		SendAt:     time.Now(),
 		WorkerName: workerName,
 		LowerBound: lower,
 		UpperBound: upper,
-		NumPoints:  uint64((upper - lower) / 0.001),
+		NumPoints:  numPoints,
 		Completed:  false,
 		Lost:       false,
 	}
 
 	c.Jobs[jobId] = job
 
-	log.Printf("Manually assigned job [id=%d] to worker %s: %s [%f, %f]",
-		jobId, workerName, function, lower, upper)
+	log.Printf("Manually assigned job [id=%d] to worker %s: %s [%f, %f] with %d points",
+		jobId, workerName, function, lower, upper, numPoints)
 
 	return jobId
 }
@@ -353,11 +376,30 @@ func (c *Calc) GetStatus() CalculationStatus {
 	}
 }
 
+// IsFinished returns a bool when the current calculation finished
+func (c *Calc) IsFinished() bool {
+	return c.FinishedAt != nil
+}
+
 // GetResult returns the current accumulated result
 func (c *Calc) GetResult() *big.Float {
 	c.sumMutex.Lock()
 	defer c.sumMutex.Unlock()
-	return c.Result
+
+	if c.IsFinished() {
+		return c.Result
+	}
+
+	return nil
+}
+
+// GetTimeToComplete returns the time it took to calculate
+func (c *Calc) GetTimeToComplete() string {
+	if c.StartedAt != nil && c.FinishedAt != nil {
+		sub := c.FinishedAt.Sub(*c.StartedAt).Abs()
+		return humanizeDuration(sub)
+	}
+	return ""
 }
 
 // Stats holds statistics information
@@ -371,14 +413,24 @@ type Stats struct {
 
 // GetStats returns calculation statistics
 func (c *Calc) GetStats() Stats {
+	// First snapshot buffered job IDs under buffer lock
+	c.bufferMutex.RLock()
+	buffered := make(map[uint64]struct{}, len(c.JobsBuffer))
+	for _, req := range c.JobsBuffer {
+		buffered[req.jobId] = struct{}{}
+	}
+	c.bufferMutex.RUnlock()
+
 	c.jobMutex.Lock()
 	defer c.jobMutex.Unlock()
 
 	completed := 0
 	workerJobs := make(map[string]int)
 
-	for _, job := range c.Jobs {
-		if job.Completed {
+	for id, job := range c.Jobs {
+		// Count job as completed if merged or present in the buffer waiting to be merged
+		_, inBuffer := buffered[id]
+		if job.Completed || inBuffer {
 			completed++
 		}
 		workerJobs[job.WorkerName]++
@@ -395,10 +447,16 @@ func (c *Calc) GetStats() Stats {
 	}
 	c.workerMutex.RUnlock()
 
+	totalJobs := len(c.Jobs)
+	pending := totalJobs - completed
+	if pending < 0 {
+		pending = 0
+	}
+
 	return Stats{
-		TotalJobs:      len(c.Jobs),
+		TotalJobs:      totalJobs,
 		CompletedJobs:  completed,
-		PendingJobs:    len(c.Jobs) - completed,
+		PendingJobs:    pending,
 		TotalWorkers:   totalWorkers,
 		WorkerJobCount: workerJobs,
 	}
@@ -457,55 +515,111 @@ func (c *Calc) ClearWorkerRanges() {
 	c.jobMutex.Lock()
 	defer c.jobMutex.Unlock()
 
+	now := time.Now()
+	c.StartedAt = &now
 	c.WorkerRanges = make(map[string]*WorkerRange)
+	c.Jobs = make(map[uint64]WorkerJob)
+	c.FinishedAt = nil
+	c.JobsBuffer = make([]mergeRequest, 0)
 	log.Println("Cleared all worker range assignments")
 }
 
 // AutoAssignRanges automatically divides the integral among connected workers
 func (c *Calc) AutoAssignRanges(function string, lower, upper, intervalSize float64) int {
-	c.workerMutex.RLock()
-	workers := make([]string, 0, len(c.Workers))
-	for name := range c.Workers {
-		workers = append(workers, name)
-	}
-	c.workerMutex.RUnlock()
-
-	if len(workers) == 0 {
-		log.Println("No workers connected for auto-assignment")
-		return 0
-	}
+	c.workerMutex.Lock()
+	defer c.workerMutex.Unlock()
 
 	// Clear previous assignments
 	c.ClearWorkerRanges()
 
-	// Divide the range equally among workers
+	// Get active workers
+	activeWorkers := make([]Worker, 0)
+	for _, worker := range c.Workers {
+		if time.Now().Sub(worker.LastPing).Abs().Seconds() <= 6 {
+			activeWorkers = append(activeWorkers, worker)
+		}
+	}
+
+	if len(activeWorkers) == 0 {
+		return 0
+	}
+
+	// Calculate range per worker
 	totalRange := upper - lower
-	rangePerWorker := totalRange / float64(len(workers))
+	rangePerWorker := totalRange / float64(len(activeWorkers))
 
-	c.jobMutex.Lock()
-	defer c.jobMutex.Unlock()
+	// Assign ranges to each worker
+	assigned := 0
+	currentLower := lower
 
-	for i, workerName := range workers {
-		workerLower := lower + (float64(i) * rangePerWorker)
-		workerUpper := lower + (float64(i+1) * rangePerWorker)
-
-		// Ensure last worker reaches exactly the upper bound
-		if i == len(workers)-1 {
+	for _, worker := range activeWorkers {
+		workerUpper := currentLower + rangePerWorker
+		if workerUpper > upper {
 			workerUpper = upper
 		}
 
-		c.WorkerRanges[workerName] = &WorkerRange{
-			WorkerName:   workerName,
+		c.WorkerRanges[worker.Name] = &WorkerRange{
+			WorkerName:   worker.Name,
 			Function:     function,
-			LowerBound:   workerLower,
+			LowerBound:   currentLower,
 			UpperBound:   workerUpper,
 			IntervalSize: intervalSize,
-			CurrentPoint: workerLower,
+			CurrentPoint: currentLower,
 		}
 
-		log.Printf("Auto-assigned range [%f, %f] of '%s' to %s",
-			workerLower, workerUpper, function, workerName)
+		assigned++
+		log.Printf("Auto-assigned range to worker %s: [%f, %f]",
+			worker.Name, currentLower, workerUpper)
+
+		currentLower = workerUpper
+		if currentLower >= upper {
+			break
+		}
 	}
 
-	return len(workers)
+	return assigned
+}
+
+func humanizeDuration(d time.Duration) string {
+	if d.Seconds() < 1.0 {
+		return "hace menos de 1 segundo"
+	}
+
+	// Calculate components
+	seconds := int64(d.Seconds())
+	days := seconds / (24 * 60 * 60)
+	seconds %= (24 * 60 * 60)
+	hours := seconds / (60 * 60)
+	seconds %= (60 * 60)
+	minutes := seconds / 60
+	seconds %= 60
+
+	// Build the string
+	var parts []string
+
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%d dia(s)", days))
+	}
+	if hours > 0 {
+		parts = append(parts, fmt.Sprintf("%d hora(s)", hours))
+	}
+	if minutes > 0 {
+		parts = append(parts, fmt.Sprintf("%d minuto(s)", minutes))
+	}
+	// Only show seconds if there are no larger units, or if it's the last non-zero unit
+	if len(parts) == 0 || (seconds > 0 && len(parts) < 2) {
+		parts = append(parts, fmt.Sprintf("%d segundo(s)", seconds))
+	}
+
+	// Join the parts, using a max of 2 units for brevity
+	if len(parts) > 2 {
+		parts = parts[:2]
+	}
+
+	// Simple conjunction for two units, otherwise just join
+	if len(parts) == 2 {
+		return fmt.Sprintf("%s y %s", parts[0], parts[1])
+	}
+
+	return strings.Join(parts, ", ")
 }
