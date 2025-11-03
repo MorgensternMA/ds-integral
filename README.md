@@ -1,28 +1,48 @@
 # Sistema Distribuido - Integrales Definidas
 
+## Configuración de Red
+
+**IPs asignadas:**
+- 172.20.1.158/24 - Master (RPC: 3410, API: 8080)
+- 172.20.1.160/24 - Worker 1
+- 172.20.1.161/24 - Worker 2
+
 ## Inicio
 
-### 1. Iniciar el Master
+### 1. Iniciar el Master (VM 172.20.1.158)
 ```powershell
 cd master
 go run main.go
 ```
+El master escuchará en:
+- RPC: `172.20.1.158:3410` (para workers)
+- API: `172.20.1.158:8080` (para control HTTP)
 
 ### 2. Iniciar los Workers
+
+#### Worker 1 (VM 172.20.1.160):
 ```powershell
 cd worker
 go run main.go
 ```
 
-Los workers se denominaran: `worker-1`, `worker-2`, etc.
+#### Worker 2 (VM 172.20.1.161):
+```powershell
+cd worker
+go run main.go
+```
+
+Los workers se conectarán automáticamente a `172.20.1.158:3410` y se denominarán: `worker-1`, `worker-2`, etc.
 
 ## Uso de la API
+
+Todos los comandos deben apuntar a la IP del master: **172.20.1.158:8080**
 
 ### Opción 1: División Automática
 
 Un solo POST y el sistema divide automáticamente entre los workers:
 
-**POST** : http://localhost:8080/integrals
+**POST** : http://172.20.1.158:8080/integrals
 
 ```bash
     {
@@ -50,7 +70,7 @@ Un solo POST y el sistema divide automáticamente entre los workers:
 Asigna múltiples rangos en un solo POST:
 (Si se quisiera asignar distintos intervalos a los workers)
 
-**POST:** http://localhost:8080/ranges/assign-multi 
+**POST:** http://172.20.1.158:8080/ranges/assign-multi 
 
 ```bash
     {
@@ -75,7 +95,7 @@ Asigna múltiples rangos en un solo POST:
 
 Asigna rangos uno por uno:
 
-**POST:** http://localhost:8080/ranges/assign
+**POST:** http://172.20.1.158:8080/ranges/assign
 
 ```bash
 # Worker 1
@@ -115,20 +135,20 @@ Asigna rangos uno por uno:
 
 ### Ver Workers Conectados
 ```bash
-curl http://localhost:8080/workers
+curl http://172.20.1.158:8080/workers
 ```
 
 ### Ver Rangos Asignados
 ```bash
-curl http://localhost:8080/ranges/list
+curl http://172.20.1.158:8080/ranges/list
 ```
 
 ### Ver Resultado
 ```bash
-curl http://localhost:8080/result?precision=10
+curl http://172.20.1.158:8080/result?precision=10
 ```
 
 ### Ver Estadísticas
 ```bash
-curl http://localhost:8080/stats
+curl http://172.20.1.158:8080/stats
 ```

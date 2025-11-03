@@ -13,7 +13,7 @@ func main() {
 
 	var masterAddr string
 	var masterPort int
-	flag.StringVar(&masterAddr, "master", "127.0.0.1", "Master IP address")
+	flag.StringVar(&masterAddr, "master", "172.20.1.158", "Master IP address")
 	flag.IntVar(&masterPort, "port", 3410, "Master port")
 	flag.Parse()
 

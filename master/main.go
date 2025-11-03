@@ -11,6 +11,7 @@ import (
 	"ds-integral.com/master/shared"
 )
 
+const masterIP = "172.20.1.158"
 const rpcPort = ":3410"
 const apiPort = ":8080"
 
@@ -31,12 +32,13 @@ func main() {
 	}
 
 	// Start RPC server for workers
-	listener, err := net.Listen("tcp", rpcPort)
+	rpcAddr := masterIP + rpcPort
+	listener, err := net.Listen("tcp", rpcAddr)
 	if err != nil {
-		log.Fatalf("Failed to listen on port %s: %s", rpcPort, err)
+		log.Fatalf("Failed to listen on %s: %s", rpcAddr, err)
 	}
 
-	log.Printf("RPC Server listening on %s (for workers)", rpcPort)
+	log.Printf("RPC Server listening on %s (for workers)", rpcAddr)
 
 	// Start RPC server in background
 	go func() {
@@ -51,7 +53,8 @@ func main() {
 	}()
 
 	// Start HTTP API server
+	apiAddr := masterIP + apiPort
 	apiServer := api.NewServer(calc)
-	log.Printf("Starting HTTP API Server on %s", apiPort)
-	log.Fatal(apiServer.Start(apiPort))
+	log.Printf("Starting HTTP API Server on %s", apiAddr)
+	log.Fatal(apiServer.Start(apiAddr))
 }
