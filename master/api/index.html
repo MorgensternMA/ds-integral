@@ -425,7 +425,7 @@
 
           <div class="stats-grid">
             <div class="stat-card">
-              <div class="stat-label">Total Jobs</div>
+              <div class="stat-label">Total Jobs estimados</div>
               <div class="stat-value" id="totalJobs">0</div>
             </div>
             <div class="stat-card">
@@ -494,6 +494,7 @@
         btn.disabled = true;
 
         try {
+          updateResult();
           const response = await fetch(`${API_URL}/integrals`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -582,6 +583,15 @@
       }
 
       function updateResult(result, timeToComplete) {
+        if (!result) {
+          document.getElementById("resultValue").textContent =
+            "Esperando cálculo...";
+          document.getElementById(
+            "resultStatus"
+          ).textContent = `Envia una integral para comenzar`;
+          return;
+        }
+
         document.getElementById("resultValue").textContent = result;
         document.getElementById(
           "resultStatus"

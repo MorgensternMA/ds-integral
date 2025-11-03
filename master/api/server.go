@@ -274,8 +274,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		UpperBound:    status.UpperBound,
 		CurrentPoint:  status.CurrentPoint,
 		Progress:      status.Progress,
-		CompletedJobs: status.CompletedJobs,
-		TotalJobs:     status.TotalJobs,
+		CompletedJobs: int(status.CompletedJobs),
+		TotalJobs:     int(status.TotalJobs),
 		IsComplete:    status.IsComplete,
 	}
 
@@ -293,10 +293,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	stats := s.calc.GetStats()
 
 	response := StatsResponse{
-		TotalJobs:      stats.TotalJobs,
-		CompletedJobs:  stats.CompletedJobs,
-		PendingJobs:    stats.PendingJobs,
-		TotalWorkers:   stats.TotalWorkers,
+		TotalJobs:      int(stats.TotalJobs),
+		CompletedJobs:  int(stats.CompletedJobs),
+		PendingJobs:    int(stats.PendingJobs),
+		TotalWorkers:   int(stats.TotalWorkers),
 		WorkerJobCount: stats.WorkerJobCount,
 	}
 

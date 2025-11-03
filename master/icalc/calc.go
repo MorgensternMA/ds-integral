@@ -3,9 +3,11 @@ package icalc
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/big"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"ds-integral.com/master/config"
@@ -37,6 +39,9 @@ type Calc struct {
 	Result       *big.Float              // The calculated integral result
 	StartedAt    *time.Time              // time when the last job started
 	FinishedAt   *time.Time              // time when the last job finished
+
+	expectedJobs  atomic.Uint64
+	completedJobs atomic.Uint64
 
 	// Dynamic configuration
 	CurrentFunction string
@@ -214,15 +219,20 @@ func (c *Calc) mergeResult(jobId uint64, result []byte, precision uint) {
 
 	// Mark job as completed
 	c.jobMutex.Lock()
+	defer c.jobMutex.Unlock()
 	if job, exists := c.Jobs[jobId]; exists {
+		if job.Completed {
+			return
+		}
+
 		now := time.Now()
 		job.Completed = true
 		job.ReturnedAt = &now
 		job.Result = result
 		c.Jobs[jobId] = job
+		c.completedJobs.Add(1)
 		log.Printf("Job %d completed and merged. Partial result: %s", jobId, partialResult.Text('f', 10))
 	}
-	c.jobMutex.Unlock()
 }
 
 func (c *Calc) GenerateWorkerName() string {
@@ -239,14 +249,14 @@ func (c *Calc) AddWorker(name, ip string) {
 	defer c.workerMutex.Unlock()
 
 	exists := false
-	// for i, worker := range c.Workers {
-	// 	if worker.IP == ip {
-	// 		worker.LastPing = time.Now()
-	// 		c.Workers[i] = worker
-	// 		exists = true
-	// 		break
-	// 	}
-	// }
+	for i, worker := range c.Workers {
+		if worker.IP == ip {
+			worker.LastPing = time.Now()
+			c.Workers[i] = worker
+			exists = true
+			break
+		}
+	}
 
 	if !exists {
 		c.Workers[name] = Worker{
@@ -277,6 +287,16 @@ func (c *Calc) StartNewIntegral(function string, lower, upper, intervalSize floa
 	c.LastPoint = lower
 	c.LastJobID = 0
 	c.Result = big.NewFloat(0).SetPrec(50_000)
+	c.completedJobs.Store(0)
+
+	// Calculate total expected jobs
+	totalRange := upper - lower
+	expectedJobs := uint64(math.Ceil(totalRange / intervalSize))
+	if expectedJobs == 0 {
+		expectedJobs = 1
+	}
+	c.expectedJobs.Store(expectedJobs)
+	log.Printf("Expected %d jobs", expectedJobs)
 
 	// Set new parameters
 	c.CurrentFunction = function
@@ -336,32 +356,20 @@ type CalculationStatus struct {
 	UpperBound    float64
 	CurrentPoint  float64
 	Progress      float64
-	CompletedJobs int
-	TotalJobs     int
+	CompletedJobs uint64
+	TotalJobs     uint64
 	IsComplete    bool
 }
 
 // GetStatus returns current calculation status
 func (c *Calc) GetStatus() CalculationStatus {
-	c.jobMutex.Lock()
-	defer c.jobMutex.Unlock()
-
-	completed := 0
-	for _, job := range c.Jobs {
-		if job.Completed {
-			completed++
-		}
-	}
+	completed := c.completedJobs.Load()
+	expected := c.expectedJobs.Load()
 
 	totalRange := c.CurrentUpper - c.CurrentLower
 	progress := 0.0
 	if totalRange > 0 {
-		progress = ((c.LastPoint - c.CurrentLower) / totalRange) * 100
-	}
-
-	expectedTotal := int(totalRange / c.CurrentInterval)
-	if expectedTotal == 0 {
-		expectedTotal = len(c.Jobs)
+		progress = (float64(completed) / float64(expected)) * 100
 	}
 
 	return CalculationStatus{
@@ -371,14 +379,16 @@ func (c *Calc) GetStatus() CalculationStatus {
 		CurrentPoint:  c.LastPoint,
 		Progress:      progress,
 		CompletedJobs: completed,
-		TotalJobs:     expectedTotal,
-		IsComplete:    c.LastPoint >= c.CurrentUpper && completed == len(c.Jobs),
+		TotalJobs:     expected,
+		IsComplete:    c.LastPoint >= c.CurrentUpper && completed == completed,
 	}
 }
 
 // IsFinished returns a bool when the current calculation finished
 func (c *Calc) IsFinished() bool {
-	return c.FinishedAt != nil
+	completed := c.completedJobs.Load()
+	expected := c.expectedJobs.Load()
+	return completed >= expected && expected > 0
 }
 
 // GetResult returns the current accumulated result
@@ -404,59 +414,38 @@ func (c *Calc) GetTimeToComplete() string {
 
 // Stats holds statistics information
 type Stats struct {
-	TotalJobs      int            `json:"total_jobs"`
-	CompletedJobs  int            `json:"completed_jobs"`
-	PendingJobs    int            `json:"pending_jobs"`
-	TotalWorkers   int            `json:"total_workers"`
+	TotalJobs      uint64         `json:"total_jobs"`
+	CompletedJobs  uint64         `json:"completed_jobs"`
+	PendingJobs    uint64         `json:"pending_jobs"`
+	TotalWorkers   uint64         `json:"total_workers"`
 	WorkerJobCount map[string]int `json:"worker_job_count"`
 }
 
 // GetStats returns calculation statistics
 func (c *Calc) GetStats() Stats {
-	// First snapshot buffered job IDs under buffer lock
-	c.bufferMutex.RLock()
-	buffered := make(map[uint64]struct{}, len(c.JobsBuffer))
-	for _, req := range c.JobsBuffer {
-		buffered[req.jobId] = struct{}{}
-	}
-	c.bufferMutex.RUnlock()
-
-	c.jobMutex.Lock()
-	defer c.jobMutex.Unlock()
-
-	completed := 0
-	workerJobs := make(map[string]int)
-
-	for id, job := range c.Jobs {
-		// Count job as completed if merged or present in the buffer waiting to be merged
-		_, inBuffer := buffered[id]
-		if job.Completed || inBuffer {
-			completed++
-		}
-		workerJobs[job.WorkerName]++
-	}
+	completed := c.completedJobs.Load()
+	expected := c.expectedJobs.Load()
 
 	c.workerMutex.RLock()
-	totalWorkers := 0
+	totalWorkers := uint64(0)
 	for _, worker := range c.Workers {
-		// skip if offline
-		if time.Now().Sub(worker.LastPing).Abs().Seconds() > 6 {
-			continue
+		if time.Now().Sub(worker.LastPing).Abs().Seconds() <= 6 {
+			totalWorkers++
 		}
-		totalWorkers++
 	}
 	c.workerMutex.RUnlock()
 
-	totalJobs := len(c.Jobs)
-	pending := totalJobs - completed
-	if pending < 0 {
-		pending = 0
+	c.jobMutex.Lock()
+	workerJobs := make(map[string]int)
+	for _, job := range c.Jobs {
+		workerJobs[job.WorkerName]++
 	}
+	c.jobMutex.Unlock()
 
 	return Stats{
-		TotalJobs:      totalJobs,
+		TotalJobs:      expected,
 		CompletedJobs:  completed,
-		PendingJobs:    pending,
+		PendingJobs:    expected - completed,
 		TotalWorkers:   totalWorkers,
 		WorkerJobCount: workerJobs,
 	}
@@ -529,9 +518,6 @@ func (c *Calc) AutoAssignRanges(function string, lower, upper, intervalSize floa
 	c.workerMutex.Lock()
 	defer c.workerMutex.Unlock()
 
-	// Clear previous assignments
-	c.ClearWorkerRanges()
-
 	// Get active workers
 	activeWorkers := make([]Worker, 0)
 	for _, worker := range c.Workers {
@@ -544,8 +530,25 @@ func (c *Calc) AutoAssignRanges(function string, lower, upper, intervalSize floa
 		return 0
 	}
 
-	// Calculate range per worker
+	// Reset state
+	now := time.Now()
+	c.Jobs = make(map[uint64]WorkerJob)
+	c.JobsBuffer = []mergeRequest{}
+	c.LastPoint = lower
+	c.LastJobID = 0
+	c.Result = big.NewFloat(0).SetPrec(50_000)
+	c.StartedAt = &now
+	c.completedJobs.Store(0)
+
+	// Calculate total expected jobs
 	totalRange := upper - lower
+	expectedJobs := uint64(math.Ceil(totalRange / intervalSize))
+	if expectedJobs == 0 {
+		expectedJobs = 1
+	}
+	c.expectedJobs.Store(expectedJobs)
+
+	// Calculate range per worker
 	rangePerWorker := totalRange / float64(len(activeWorkers))
 
 	// Assign ranges to each worker
