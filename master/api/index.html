@@ -436,6 +436,10 @@
               <div class="stat-label">Workers Activos</div>
               <div class="stat-value" id="activeWorkers">0</div>
             </div>
+            <div class="stat-card" style="border-left-color: #f59e0b">
+              <div class="stat-label">Tiempo de Ejecución</div>
+              <div class="stat-value" id="executionTime" style="font-size: 1.5rem; color: #d97706">--</div>
+            </div>
           </div>
 
           <div class="update-time">
@@ -589,13 +593,15 @@
           document.getElementById(
             "resultStatus"
           ).textContent = `Envia una integral para comenzar`;
+          document.getElementById("executionTime").textContent = "--";
           return;
         }
 
         document.getElementById("resultValue").textContent = result;
         document.getElementById(
           "resultStatus"
-        ).textContent = `Resultado obtenido en ${timeToComplete}`;
+        ).textContent = `✓ Cálculo completado`;
+        document.getElementById("executionTime").textContent = timeToComplete || "Calculando...";
       }
 
       // Polling cada 1 segundo
