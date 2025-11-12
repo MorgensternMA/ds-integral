@@ -82,6 +82,10 @@ func (c *Calculator) ping() {
 }
 
 func (c *Calculator) askJob() bool {
+	if c.job != nil && !c.job.completed {
+		return false
+	}
+
 	args := &shared.AskArgs{WorkerName: c.workerName}
 	var reply shared.AskReply
 	err := c.client.Call("CalcRPC.Ask", args, &reply)
@@ -91,6 +95,7 @@ func (c *Calculator) askJob() bool {
 	}
 
 	if reply.NumPoints == 0 {
+		log.Printf("skipped reply %+v because there is no points", reply)
 		return false
 	}
 
@@ -139,6 +144,8 @@ func (c *Calculator) calculate() []byte {
 	precision := uint(math.Log2(float64(c.job.numPoints))+1000*3.32) * 3
 	c.job.precision = precision
 
+	f := getFunction(c.job.function)
+
 	// Crear un nuevo número para guardar el resultado
 	result := new(big.Float).SetPrec(precision * 2).SetFloat64(0)
 
@@ -147,8 +154,8 @@ func (c *Calculator) calculate() []byte {
 
 	// Aplicar el método del trapecio para la integración numérica
 	// f(a)/2 + f(a+h) + f(a+2h) + ... + f(b-h) + f(b)/2
-	firstTerm := evaluateFunction(c.job.lowerBound, c.job.function)
-	lastTerm := evaluateFunction(c.job.upperBound, c.job.function)
+	firstTerm := evaluateFunction(c.job.lowerBound, f)
+	lastTerm := evaluateFunction(c.job.upperBound, f)
 
 	// Sumar los términos de los extremos (con peso 1/2)
 	sum := new(big.Float).SetPrec(precision).SetFloat64((firstTerm + lastTerm) / 2.0)
@@ -156,7 +163,7 @@ func (c *Calculator) calculate() []byte {
 	// Sumar los términos intermedios
 	for i := uint64(1); i < c.job.numPoints; i++ {
 		x := c.job.lowerBound + float64(i)*deltaX
-		fx := evaluateFunction(x, c.job.function)
+		fx := evaluateFunction(x, f)
 		sum.Add(sum, big.NewFloat(fx))
 	}
 
@@ -176,28 +183,9 @@ func (c *Calculator) calculate() []byte {
 }
 
 // Evalúa la función en un punto dado
-func evaluateFunction(x float64, functionStr string) float64 {
-	// Evaluador de expresiones simple
-	// Ejemplo básico que soporta x^n, sin(x), cos(x), etc.
-
-	switch functionStr {
-	case "x^2":
-		return x * x
-	case "sin(x)":
-		return math.Sin(x)
-	case "cos(x)":
-		return math.Cos(x)
-	case "exp(x)":
-		return math.Exp(x)
-	default:
-		// Parsear expresiones simples como "x^n"
-		return parseAndEvaluate(functionStr, x)
-	}
-}
-
-// Parsea y evalua expresiones matemáticas simples
-func parseAndEvaluate(_ string, x float64) float64 {
-	return x * x
+func evaluateFunction(x float64, f func(float64) float64) float64 {
+	output := f(x)
+	return output
 }
 
 func (c *Calculator) send(buffer []byte) bool {
@@ -213,6 +201,7 @@ func (c *Calculator) send(buffer []byte) bool {
 		return false
 	}
 
+	c.job = nil
 	log.Printf("Job result sent.")
 	return true
 }
